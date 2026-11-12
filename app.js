@@ -41,7 +41,8 @@ const nameMe = (uid) => esc(name(uid)) + (uid === S.me?.id ? ' <span class="mute
 function hue(uid) { let h = 2166136261; for (const c of String(uid)) h = Math.imul(h ^ c.charCodeAt(0), 16777619); return ((h >>> 0) * 137) % 360; }
 function av(uid, cls = '') {
   const p = S.byId[uid];
-  if (p?.avatar_url) return `<span class="av ${cls}"><img src="${esc(p.avatar_url)}" referrerpolicy="no-referrer" alt="" loading="lazy"></span>`;
+  const url = p?.custom_avatar_url || p?.avatar_url;
+  if (url) return `<span class="av ${cls}"><img src="${esc(url)}" referrerpolicy="no-referrer" alt="" loading="lazy"></span>`;
   const ini = (p?.display_name || '?').split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase();
   return `<span class="av ${cls}" style="background:hsl(${hue(uid)} 70% 62%)">${esc(ini)}</span>`;
 }
@@ -280,7 +281,7 @@ async function viewRanking(yearStr) {
         </a>`;
       }).join('')}
     </div>
-    <p class="tiny muted center mt">Max 1 punkt na osobę na sesję. Ranking liczony na żywo z zapisanych głosów i wyników.</p>`;
+    <p class="tiny muted center mt">Max 1 punkt na sesję (w mieszanej: MVP i pojedynek osobno, max 2). Ranking liczony na żywo z zapisanych głosów i wyników.</p>`;
 }
 function plural(n, one, few, many) {
   if (n === 1) return one;
@@ -317,7 +318,7 @@ async function viewPlayer(uid, yearStr) {
       return `<a class="item tap" href="#/s/${r.session_id}">
         <div class="grow"><div style="font-weight:600">${fDay(r.sessions.start_at)} · ${fTime(r.sessions.start_at)}</div>
           <div class="chips" style="margin-top:4px">${typeChip(r.sessions.type)}${r.no_challenge ? '<span class="chip">🕊️ nie wyzywa</span>' : ''}${(p?.reasons || []).map((x) => `<span class="chip good">${esc(x)}</span>`).join('')}</div></div>
-        <div class="pts">${p ? '+1' : '0'}</div></a>`;
+        <div class="pts">${p ? '+' + p.points : '0'}</div></a>`;
     }).join('')}</div>` : '<div class="empty"><span class="big">🏖️</span>Brak sesji w tym roku</div>'}`;
 }
 
@@ -380,7 +381,7 @@ function sessionForm(s) {
 function typeHint(t) {
   return {
     ekipowa: 'Wygrana drużyny, MVP i pojedynki dają punkty.',
-    mieszana: 'Wygrana drużyny nie daje punktów. MVP i pojedynki dają.',
+    mieszana: 'Wygrana drużyny nie daje punktów. MVP i pojedynek to osobne punkty (max 2).',
     randomy: 'Wygrana drużyny nie daje punktów. MVP i pojedynki domyślnie wyłączone.',
   }[t];
 }
@@ -450,8 +451,8 @@ async function viewSession(id) {
   if (pts.length) {
     html += `<h2>Punkty z tej sesji ${voteOpen ? '<span class="chip vote">na żywo</span>' : ''}</h2><div class="list">
       ${pts.sort((a, b) => name(a.user_id).localeCompare(name(b.user_id), 'pl')).map((p) => `<div class="item">${av(p.user_id, 'sm')}<div class="grow"><b>${nameMe(p.user_id)}</b>
-        <div class="chips" style="margin-top:4px">${p.reasons.map((r) => `<span class="chip good">${esc(r)}</span>`).join('')}</div></div><span class="chip pt">+1</span></div>`).join('')}
-    </div>${pts.some((p) => p.reasons.length > 1) ? '<p class="tiny muted">Kilka powodów w jednej sesji = nadal 1 punkt.</p>' : ''}`;
+        <div class="chips" style="margin-top:4px">${p.reasons.map((r) => `<span class="chip good">${esc(r)}</span>`).join('')}</div></div><span class="chip pt">+${p.points}</span></div>`).join('')}
+    </div>${pts.some((p) => p.reasons.length > p.points) ? `<p class="tiny muted">${s.type === 'mieszana' ? 'W sesji mieszanej MVP i pojedynek liczą się osobno; pozostałe powody — max 1 punkt.' : 'Kilka powodów w jednej sesji = nadal 1 punkt.'}</p>` : ''}`;
   }
 
   // ----- skład
@@ -485,9 +486,11 @@ async function viewSession(id) {
   // ----- pojedynki
   if (s.duels_enabled) {
     html += `<h2>Pojedynki 1v1 <span class="count">${accepted.length}</span></h2>`;
-    const canChallenge = now < T.mid && !myPart?.no_challenge && !inDuel(me);
-    if (canChallenge) html += `<button class="btn primary block" data-action="challenge-pick" style="margin-bottom:10px">⚔️ Wyzwij kogoś</button>`;
+    const sentActive = duels.some((d) => d.challenger_id === me && (d.status === 'pending' || d.status === 'accepted'));
+    const canChallenge = now < T.mid && !myPart?.no_challenge && !inDuel(me) && !sentActive;
+    if (canChallenge) html += `<button class="btn primary block" data-action="challenge-pick" style="margin-bottom:10px">⚔️ Wyzwij kogoś</button><p class="tiny muted" style="margin:-4px 4px 10px">Limit: jedno wyzwanie na sesję.</p>`;
     else if (now < T.mid && myPart?.no_challenge) html += `<p class="small muted">Masz zaznaczone „nie chcę wyzywać”.</p>`;
+    else if (now < T.mid && sentActive && !inDuel(me)) html += `<p class="small muted">Masz już wysłane wyzwanie w tej sesji (limit: 1). Jeśli zostanie odrzucone albo je anulujesz, możesz wyzwać kogoś innego.</p>`;
     else if (now >= T.mid && now < T.en) html += `<p class="small muted">Wyzwania zamknięte (połowa sesji minęła). Zaakceptowany pojedynek można wycofać do ${fTime(T.en)}.</p>`;
     const visible = duels.filter((d) => d.status !== 'cancelled');
     html += visible.length ? visible.map((d) => duelCard(d, S.cur)).join('<div style="height:8px"></div>') : '<div class="empty small">Brak wyzwań w tej sesji.</div>';
@@ -649,7 +652,7 @@ async function updateDuelBadge() {
 /* ================= WIĘCEJ / ADMIN / HISTORIA / ZASADY ================= */
 async function viewMore() {
   return `<h1>Więcej</h1>
-    <div class="card hero row">${av(S.me.id, 'lg')}<div class="grow"><div style="font-weight:800;font-size:18px">${esc(S.me.display_name)}</div><div class="small muted ellipsis">${esc(S.me.email)}</div>
+    <div class="card hero row"><button class="av-edit" data-action="avatar" title="Zmień zdjęcie">${av(S.me.id, 'lg')}<span>📷</span></button><div class="grow"><div style="font-weight:800;font-size:18px">${esc(S.me.display_name)}</div><div class="small muted ellipsis">${esc(S.me.email)}</div>
       ${S.me.is_admin ? '<span class="chip vote" style="margin-top:6px">administrator</span>' : ''}</div>
       <button class="btn sm" data-action="rename">✏️</button></div>
     <div class="list mt">
@@ -725,14 +728,14 @@ async function viewRules() {
   const e = S.config.entry_window_hours;
   return `<div class="topbar"><a class="back" href="#/wiecej">‹</a><h1 style="margin:0">Zasady</h1></div>
   <div class="card small" style="line-height:1.6">
-    <b>Punkty</b> — każdy warunek to 1 pkt, ale <b>max 1 punkt na osobę na sesję</b>:
+    <b>Punkty</b> — każdy warunek to 1 pkt, ale <b>max 1 punkt na osobę na sesję</b>. Wyjątek: w <b>sesji mieszanej</b> MVP i wygrany pojedynek to osobne punkty (razem max 2):
     <ul style="margin:6px 0 12px;padding-left:18px">
       <li>wygrana drużyny (tylko sesje ekipowe),</li><li>MVP sesji (głosowanie),</li><li>wygrany pojedynek 1v1,</li>
       <li>premia za powrót — pierwsza obecność po min. 4 kolejnych sesjach bez gry,</li><li>punkt za nieparzystość (przyznaje lider).</li>
     </ul>
     <b>Remis</b> w MVP lub pojedynku = nikt nie dostaje punktu. Pojedynek bez głosów = bez punktów.<br><br>
     <b>Typy sesji</b><br>${typeChip('ekipowa')} ${typeHint('ekipowa')}<br>${typeChip('mieszana')} ${typeHint('mieszana')}<br>${typeChip('randomy')} ${typeHint('randomy')}<br><br>
-    <b>Pojedynki</b> — wyzwać może każdy każdego z ekipy. Akceptacja do połowy sesji, inaczej wyzwanie wygasa. Zaakceptowany pojedynek można wycofać do końca sesji. Głosują obecni na sesji poza dwójką z pojedynku, przez ${S.config.vote_window_hours} h od końca sesji.<br><br>
+    <b>Pojedynki</b> — wyzwać może każdy każdego z ekipy, ale <b>jedno wyzwanie na sesję</b> (kolejne dopiero po odrzuceniu albo anulowaniu). Każdy może mieć w sesji tylko jeden pojedynek. Akceptacja do połowy sesji, inaczej wyzwanie wygasa. Zaakceptowany pojedynek można wycofać do końca sesji. Głosują obecni na sesji poza dwójką z pojedynku, przez ${S.config.vote_window_hours} h od końca sesji.<br><br>
     <b>MVP</b> — głosują obecni na sesji (nie na siebie), przez ${S.config.vote_window_hours} h od końca sesji.<br><br>
     <b>„Nie chcę wyzywać”</b> — widoczne w rankingu. Osoba bez pary z tym oznaczeniem nie dostaje punktu za nieparzystość.<br><br>
     <b>Wyniki</b> — wpisuje lider albo każdy sam za siebie, przez ${e} h od startu sesji. Jeśli lider nie zatwierdzi wyników w tym czasie, każdy może wpisać swoje do startu następnej sesji. Potem wyniki są zablokowane; korekty robi administrator (z powodem w historii).<br><br>
@@ -875,6 +878,15 @@ const actions = {
     const r = await rpc('revoke_odd', { p_session: S.cur.s.id, p_user: el.dataset.uid, p_reason: reason });
     if (r.ok) { toast('Punkt cofnięty'); render(true); }
   },
+  'avatar': () => openSheet(`<h3>Zdjęcie profilowe</h3>
+      <div class="row" style="justify-content:center;margin-bottom:16px">${av(S.me.id, 'xl')}</div>
+      <label class="btn primary block" style="cursor:pointer">📷 Wybierz zdjęcie z telefonu / komputera<input type="file" accept="image/*" data-avatar-input hidden></label>
+      <p class="tiny muted center">Zdjęcie zostanie przycięte do kwadratu i zmniejszone (max 1 MB).</p>
+      ${S.me.custom_avatar_url ? `<button class="btn block mt" data-action="avatar-reset">↩️ Przywróć zdjęcie z Google</button>` : ''}`, 'avatar'),
+  'avatar-reset': async (el) => {
+    const r = await rpc('set_my_avatar', { p_url: null }, el);
+    if (r.ok) { await removeOldAvatars(null); await loadMembers(); closeSheet(); toast('Przywrócono zdjęcie z Google'); render(true); }
+  },
   'rename': () => openSheet(`<h3>Twoja nazwa w rankingu</h3><form data-form="rename">
       <label class="f"><span>Nazwa</span><input class="input" name="name" required minlength="2" maxlength="40" value="${esc(S.me.display_name)}"></label>
       <button class="btn primary block">Zapisz</button></form>`, 'rename'),
@@ -962,6 +974,44 @@ document.addEventListener('submit', (e) => {
   forms[form.dataset.form]?.(form, form.querySelector('button:not([type="button"])'));
 });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !sheet.hidden) closeSheet(); });
+document.addEventListener('change', (e) => {
+  const inp = e.target.closest('[data-avatar-input]');
+  if (inp?.files?.[0]) uploadAvatar(inp.files[0], inp.closest('label'));
+});
+
+/* ================= własne zdjęcie profilowe ================= */
+async function uploadAvatar(file, btn) {
+  btn?.classList.add('busy');
+  try {
+    let bmp;
+    try { bmp = await createImageBitmap(file); } catch { throw new Error('Nie udało się odczytać zdjęcia — wybierz plik JPG lub PNG'); }
+    const size = 320, side = Math.min(bmp.width, bmp.height);
+    const c = document.createElement('canvas');
+    c.width = c.height = size;
+    c.getContext('2d').drawImage(bmp, (bmp.width - side) / 2, (bmp.height - side) / 2, side, side, 0, 0, size, size);
+    let blob = await new Promise((r) => c.toBlob(r, 'image/webp', 0.85));
+    let type = 'image/webp', ext = 'webp';
+    if (!blob || blob.type !== 'image/webp') { blob = await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.85)); type = 'image/jpeg'; ext = 'jpg'; }
+    const path = `${S.me.id}/${Date.now()}.${ext}`;
+    const { error } = await sb.storage.from('avatars').upload(path, blob, { contentType: type, upsert: false });
+    if (error) throw error;
+    const url = sb.storage.from('avatars').getPublicUrl(path).data.publicUrl;
+    const r = await rpc('set_my_avatar', { p_url: url });
+    if (!r.ok) return;
+    await removeOldAvatars(path);
+    await loadMembers();
+    closeSheet(); burst(['📸', '✨']); toast('Zdjęcie zmienione'); render(true);
+  } catch (e) {
+    toast(e?.message || String(e), 'err');
+  } finally { btn?.classList.remove('busy'); }
+}
+async function removeOldAvatars(keep) {
+  try {
+    const { data } = await sb.storage.from('avatars').list(S.me.id);
+    const old = (data || []).map((f) => `${S.me.id}/${f.name}`).filter((p) => p !== keep);
+    if (old.length) await sb.storage.from('avatars').remove(old);
+  } catch { /* stare pliki nie są krytyczne */ }
+}
 
 boot();
 })();
