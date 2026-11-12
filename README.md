@@ -55,6 +55,12 @@ Na telefonie: „Dodaj do ekranu głównego” — strona działa jak aplikacja.
 - **Typy sesji** — `ekipowa`: wygrana + MVP + pojedynki; `mieszana`: MVP + pojedynki; `randomy`: domyślnie nic
   (lider może włączyć MVP/pojedynki przy tworzeniu sesji; domyślne ustawienie zmienia admin).
 - **Limit 1 pkt na osobę na sesję** — widok grupuje wszystkie powody i daje 1 punkt; powody widać przy sesji.
+  Wyjątek: **sesja mieszana** — MVP i wygrany pojedynek to osobne punkty (max 2); premia za powrót /
+  nieparzystość dają punkt tylko wtedy, gdy nie ma żadnego z nich (migracja `002`).
+- **Limit wyzwań** — jedno wysłane wyzwanie na osobę na sesję (kolejne dopiero po odrzuceniu / anulowaniu),
+  i jeden zaakceptowany pojedynek na osobę na sesję.
+- **Zdjęcie profilowe** — Więcej → dotknij zdjęcia: własny plik (przycinany do 320×320, Supabase Storage,
+  bucket `avatars`) albo powrót do zdjęcia z Google.
 - **Remis / brak głosów** — brak punktu (MVP i pojedynki).
 - **Pojedynki** — wyzwanie i akceptacja do połowy sesji; po niej oczekujące wygasają. Wycofanie zaakceptowanego
   do końca sesji. Głosują obecni na sesji poza dwójką z pojedynku, przez 24 h od końca. Jedna osoba = jeden
